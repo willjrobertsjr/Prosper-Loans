@@ -1,0 +1,1054 @@
+#**The Life and Times of Prosper Loans**
+
+####By Will Roberts
+
+
+
+The United States economic environment is heavily reliant on the loan industry.  Businesses use loans to start up and grow, individuals employ them to make large purchases or pay down other debt, and students depend on loans to finance attendence at institutions.  Overall, loans are a key cog in what makes America the land of opportunity, and in turn the nation pays close attention to the health and regulations of the industry.
+
+Prosper, a San Francisco-based lending marketplace, began business on February 15, 2006.  Not just any loan boker, Prosper was the first ever peer to peer lending platform that connected borrowers and lenders.  Through its unique format, borrowers can request loans anywhere from \$2,000 to \$35,000, and Prosper lists and matches them with investors to fund the loans.
+
+
+###History
+
+Prosper received a cease and desist letter from the Securities and Exchange Commission on November 24, 2008.  Their claim was that Prosper issued investments, though internally the company believed it was merely a marketplace that connected borrowers and lenders.  In the end, Prosper registered with the SEC and resumed business in July 2009.  During this time, they improved their underwriting department and began issuing Prosper Ratings for each loan and Prosper Scores for each borrower.
+
+
+
+###Prosper Data Set
+
+The loan set for this study comes from publicly available Prosper-published data ranging from their inception to the first quarter of 2014, after which the company began only making this information available to its investors.  The set contains 113,937 loans with 82 variables describing their attributes.  A data set this robust contains endless trends for potential insights, so a few specifically were chosen to cover in depth.  
+
+Credit score, Prosper score, APR, default rates, and date of loan issue are all important metrics on either side of the loan.  Historically significant economic developments occurred during the time frame of the loan set, so those implications were also kept in mind.   
+
+```{r packages, echo = FALSE, message = FALSE, warning = FALSE}
+library(ggplot2)
+library(RColorBrewer) 
+library(dplyr)
+library(tidyr)
+library(maps)
+library(reshape2)
+
+#read in data set
+loan <- read.csv('prosperLoanData.csv')
+```
+
+```{r variable and data set adjustments, echo = FALSE}
+#switch around format of loan quarter to be able to sort by year later
+loan <- separate(loan,
+                 LoanOriginationQuarter, 
+                 c("LoanOriginationQuarter",
+                   "LoanOriginationYear"), 
+                 sep = ' ')
+
+#rejoin year and quarter with year appearing first
+loan <- unite(loan, 
+              "LoanOriginationYearQ", 
+              LoanOriginationYear, 
+              LoanOriginationQuarter, 
+              sep = ' ')
+
+#change from factor and lump Past Due buckets into one bucket
+loan$LoanStatus <- as.character(loan$LoanStatus)
+
+loan$LoanStatus[loan$LoanStatus == "Past Due (>120 days)"] <- "Delinquent"
+loan$LoanStatus[loan$LoanStatus == "Past Due (1-15 days)"] <- "Delinquent"
+loan$LoanStatus[loan$LoanStatus == "Past Due (16-30 days)"] <- "Delinquent"
+loan$LoanStatus[loan$LoanStatus == "Past Due (31-60 days)"] <- "Delinquent"
+loan$LoanStatus[loan$LoanStatus == "Past Due (61-90 days)"] <- "Delinquent"
+loan$LoanStatus[loan$LoanStatus == "Past Due (91-120 days)"] <- "Delinquent"
+
+loan$LoanStatus <- as.factor(loan$LoanStatus)
+
+#isolate year in a column
+loan.yearstudy <- separate(loan, 
+                           LoanOriginationYearQ, 
+                           c("LoanOriginationYear", 
+                             "LoanOriginationQuarter"), 
+                           sep = ' ')
+
+#change type from numeric to factor
+loan.yearstudy$ProsperRating..numeric. <- 
+  as.factor(loan.yearstudy$ProsperRating..numeric.)
+```
+
+
+
+
+####*FICO Credit Score*
+
+The study started with what most people instinctively associate with any kind of borrowing: credit score.  In their analysis of potential borrowers, Prosper pulls potential clients' FICO credit scores.  Slightly different than many credit scores, the FICO score has a range from 250 to 900.
+
+The data set has an upper and lower range for the score that are uniformly separated by 20 points, so we will use the upper extensively for consistency.
+
+
+```{r echo=FALSE}
+#summary(loan$CreditScoreRangeUpper)
+#summary has unrealistic low FICO scores
+
+#subset to real credit scores and summary to confirm corrected
+loan.realcscore <- subset(loan, 
+                          CreditScoreRangeUpper >= 250 & 
+                            CreditScoreRangeUpper <= 900)
+```
+
+```{r echo = FALSE}
+summary(loan.realcscore$CreditScoreRangeUpper)
+```
+
+
+The above summary shows the inner quartile range between 679 and 739 with both mean and median around 700 for credit scores.  The following histogram confirms the same.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = CreditScoreRangeUpper)) +
+  geom_histogram(binwidth = 20) +
+  coord_cartesian(xlim = c(400,900)) +
+  xlab('FICO Credit Score') +
+  ylab('Count')
+```
+
+
+Using the same x-axis scale, the plot of credit scores for loans after Prosper's registration with the SEC in 2009 is below.  Notice no loans are below 600.  This is just one example of the effect of regulation by the SEC on Prosper.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#subset post shut down loans
+loan.postshutdown <- subset(loan.yearstudy, LoanOriginationYear > 2008)
+
+ggplot(data = loan.postshutdown, 
+       aes(x = CreditScoreRangeUpper)) +
+  geom_histogram(binwidth = 20) +
+  coord_cartesian(xlim = c(400,900)) +
+  xlab('FICO Credit Score') +
+  ylab('Count')
+```
+
+
+With a feel for the types of credit scores that borrowers held, the next step is to see how some of the variables supplied by Prosper relate to credit scores.  
+
+```{r echo = FALSE}
+summary(loan.realcscore$CurrentDelinquencies)
+```
+
+
+A brief summary of the variable for current delinquencies shows that a large majority of borrowers have none.  The variable tracks the number of credit lines a borrower is behind of payments for at the time of the new loan issue. 
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.realcscore,
+       aes(x = CreditScoreRangeUpper, 
+           y = CurrentDelinquencies, 
+           color = LoanStatus)) +
+  geom_jitter(alpha = .5) +
+  xlim(500,850) +
+  ylim(0,50) +
+  guides(color = guide_legend(override.aes = list(alpha = 1, 
+                                                  size = 2))) +
+  xlab('FICO Credit Score') +
+  ylab('Current Delinquencies')
+```
+
+
+When an application does mention having outstanding delinquencies, it's no surprise there are more at lower credit scores, and the loan status coloring shows they led to more charged off and defaulted loans between scores of 500 to 650.
+
+The next plot explores credit usage.  Specifically, credit lines opened in last 7 years are summed, which should be a good measure of recent credit activity.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.realcscore, 
+       aes(x = TotalCreditLinespast7years)) +
+  geom_histogram() +
+  xlab('Number of Credit Lines Past 7 Years') +
+  ylab('Count') +
+  coord_cartesian(xlim = c(0,100))
+
+summary(loan.realcscore$TotalCreditLinespast7years)
+```
+
+The histogram shows a pretty normal distribution with a small tail of outliers containing a lot of recent credit activity.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE }
+ggplot(data = loan.realcscore,
+       aes(x = CreditScoreRangeUpper,
+           y = TotalCreditLinespast7years)) +
+  geom_jitter(alpha = .25)+
+  xlim(400,900) +
+  xlab('FICO Credit Score') +
+  ylab(' Total Credit Lines Opened Past 7 Years')
+```
+
+
+Higher credit scores, especially around the mean at 700, seem to trend towards having opened more credit lines. Intuitively this makes sense, for it should be easier to receive a good credit offer at higher FICO scores leading to more credit agreements.
+
+The final variable for exploration is the length of current employment for borrowers at the time the loan was issued.  
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.realcscore, 
+       aes(x = EmploymentStatusDuration)) +
+  geom_histogram() +
+  xlab('Employment Status Duration (Months)') +
+  ylab('Count') +
+  coord_cartesian(xlim = c(0,600))
+```
+
+The distribution is skewed right towards smaller tenures.  A possible explanation is people who have worked for fewer years have less built up capital and would have the need for a loan.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.realcscore, 
+       aes(x = CreditScoreRangeUpper,
+           y = EmploymentStatusDuration)) +
+  geom_jitter(alpha = .25) +
+  xlim(500,900) +
+  xlab('FICO Credit Score') +
+  ylab('Duration of Employment (Months)')
+```
+
+
+There seems to again be the highest duration of employment around the FICO mean of 700, which represents a working class citizen with a stable job and good credit. 
+
+The three plots above show interesting variables that to a degree get factored into a final credit score, but at the end of the day what a borrower really is concerned with is the APR of their loan.  
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = BorrowerAPR)) +
+  geom_histogram() +
+  xlab('Borrower APR') +
+  ylab('Count')
+
+summary(loan$BorrowerAPR)
+```
+
+The full spectrum of rates above display a normal distribution and a mean APR of 21.88%.  
+
+In the end, interest rates are only as good as the borrower's ability to pay back the loan.  
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = subset(loan, LoanStatus != 'Cancelled'), 
+       aes(x = LoanStatus)) +
+  geom_histogram(stat = 'count') +
+  xlab('Loan Status') +
+  ylab('Count')
+```
+
+
+Current loans in the set are ones still active as of 2014, so a good portion of our set is recent.  In all, almost 40,000 loans have been completed in Prosper's young history. 
+
+Taking this all into consideration, the plot below of all APRs and accompanying credit scores of Prosper loans seems confusing as shown.  Too many currently unfinished loans are included.  There also does not seem to be an overwhelming large correlation between credit score and APR to the naked eye.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = CreditScoreRangeUpper, 
+           y = BorrowerAPR, 
+           color = loan$LoanStatus)) +
+  scale_color_brewer(type = 'qual',
+                     palette = 'Accent',
+    guide = guide_legend(title = 'Loan Status', 
+                         reverse = TRUE,
+    override.aes = list(alpha = 1,
+                        size = 2))) +
+  geom_jitter(alpha = .3) +
+  xlim(300,900) +
+  xlab('FICO Credit Score') +
+  ylab('Borrower APR')
+```
+
+
+Therefore, we need to look at all loans that are closed (either defaulted, charged off, or paid off).  The below graph is a bit more clear.  Fully paid off loans seem to have a negative correlation, and loans that were not fulfilled more heavily congregate lower on the credit scale and higher on the APR scale.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#create a subset where loans are all closed 
+loan.nocurrent <- subset(loan, loan$LoanStatus != 'Current' &
+                         loan$LoanStatus != 'Delinquent' &
+                         loan$LoanStatus != 'FinalPaymentInProgress' &
+                         loan$LoanStatus != 'Cancelled' &
+                         CreditScoreRangeUpper >= 250 &
+                         CreditScoreRangeUpper <= 900)
+
+ggplot(data = loan.nocurrent, 
+       aes(x = CreditScoreRangeUpper, 
+           y = BorrowerAPR, 
+           color = loan.nocurrent$LoanStatus)) +
+  #conform colors to data and set legend to see colors
+  scale_color_brewer(type = 'qual',
+                     palette = 'Accent',
+    guide = guide_legend(title = 'Loan Status',
+                         reverse = TRUE,
+    override.aes = list(alpha = 1, 
+                        size = 2))) +
+  geom_jitter(alpha = .25) +
+  xlim(300,900) +
+  xlab('FICO Credit Score') +
+  ylab('Borrower APR')
+```
+
+
+```{r echo = FALSE}
+cor.test(loan.nocurrent$CreditScoreRangeUpper, loan.nocurrent$BorrowerAPR)
+```
+
+
+As suspected, there's a moderate negative correlation.  In other words, APR decreases as credit score increases for the Prosper loans that were completed or defaulted, but not quite as strong as I had anticipated.
+
+
+
+
+####*Prosper Score*
+
+
+With a pretty good grasp of what the credit score variable ranges and implications look like, it's necessary to turn to Prosper's own method of grading the reliability of borrowers.  When a loan is applied for, a Prosper Score is assigned to the potential borrower's account.  The score is based on past historical performance of Prosper loans to borrowers with similar characteristics according to the company.  The metric was created in 2009, so all loans in the set from this point on feature the statistic.
+
+The summary and histogram below show the distribution of Prosper scores for users.  The distribution appears to be fairly normal with a minimum of 1 and maximum of 11. 
+
+
+```{r echo = FALSE}
+summary(loan$ProsperScore)
+```
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = ProsperScore)) +
+  geom_histogram(stat = 'count') +
+  xlab('Prosper Score') +
+  ylab('Count') +
+  scale_x_continuous(breaks = seq(1,11,1))
+```
+
+
+How does it compare to credit scores?  One would expect the two to be pretty strongly correlated since they both represent measures of a person's ability to pay back a loan.  The scatterplot does seem to show a positive correlation, but just how strong?
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.realcscore, 
+       aes(x = ProsperScore, 
+           y = CreditScoreRangeUpper)) +
+  geom_jitter(alpha = .03) +
+  ylim(600, 900) +
+  scale_x_continuous(breaks = seq(1,11,1)) +
+  xlab('Prosper Score') +
+  ylab('FICO Credit Score')
+```
+ 
+ 
+```{r echo = FALSE}
+cor.test(loan.realcscore$ProsperScore, loan.realcscore$CreditScoreRangeUpper)
+```
+
+
+Pearson's R confirms positive correlation but really not quite as strong as one might believe. However, from this we can conclude that Prosper takes into account more than just credit score when grading its borrowers.
+
+Now let's take a peak at a few metrics from the data set concerning the investor side.  Two metrics on percentages of money returned to investors are lender yield and estimated return.
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+library(reshape2)
+loan.yieldmelt <- melt(loan,id.vars='ListingNumber',
+                       measure.vars=c('LenderYield','EstimatedReturn'))
+
+loan.yieldmelt$variable <- as.factor(loan.yieldmelt$variable)
+ggplot(data = loan.yieldmelt, 
+       aes (x=variable, y=value)) +
+  geom_boxplot() +
+  xlab('Prosper Return Metric') +
+  ylab('Proportion Returned to Investor')
+  
+```
+
+As you can see, the lender yield variable (interest rate less servicing fees) carries a larger return number.  The reason is it purely considers the rate charged to the borrower, where estimated return takes into account their ability to pay it back.
+
+
+We first plot lender yields and Prosper Scores for each loan.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = ProsperScore, 
+           y = LenderYield)) +
+  geom_jitter(alpha = .1) +
+  scale_x_continuous(breaks = seq(1,11,1)) +
+  xlab('Prosper Score') +
+  ylab('Lender Yield')
+```
+
+
+A quick look at lender yield shows that investors generally can expect a higher yield on low Prosper Score users in a perfect world where all loans are repaid. They however aren't, and Prosper attempts to predict that in the next plot.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.nocurrent, 
+       aes(x = ProsperScore,
+           y = EstimatedReturn, 
+           color = LoanStatus)) +
+  geom_jitter(alpha = .05) +
+  geom_line(stat = 'summary', 
+            fun.y = median, size = 2) +
+  scale_x_continuous(breaks = seq(1,11,1)) +
+  xlab('Prosper Score') +
+  ylab('Estimated Return')
+```
+
+
+This plot of estimated return represents a way for Prosper to better predict what will be returned to the lender, taking into account estimated principal amount loss of a charge off, uncollected interest payments, and collected late fees.  This is why the return at lower Prosper Scores is much lower than the previous lender yield above and even negative in some cases.
+
+The median lines show loan statuses along each Prosper Score, and the completed loan had a lower return as they were presumably safer bets to start with.
+
+Building on this, we next take a look at estimated return means by Prosper Score to see how Prosper predicted returns based on their own risk measure.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#detach("package:plyr", unload=TRUE) 
+
+#group by p score and aggregate mean, median, and n for each score
+loan.bypscore <- loan %>% 
+  group_by(ProsperScore) %>% 
+  summarise(MeanReturn = mean(EstimatedReturn), 
+            MedianReturn = median(EstimatedReturn), 
+            n = n()) %>%
+  arrange(ProsperScore)
+
+#show head to confirm data is in expected format
+#head(loan.bypscore)
+
+ggplot(data = loan.bypscore, 
+       aes(x = ProsperScore, y = MeanReturn)) +
+  geom_line() +
+  geom_point(size = 2) +
+  ylim(0.05,0.15) +
+  scale_x_continuous(breaks = seq(1,11,1)) +
+  xlab('Prosper Score') +
+  ylab('Mean Return')
+```
+
+
+It seems interesting that the expected return does not necessarily go down until arount a Prosper Score of 6 then steadily decreases to 5%. It shows Prosper's models don't predict borrowers with scores between 1 and 6 to be any riskier than the next given they start with borrowing rates fitting for their score..
+
+
+
+
+####*Borrower APR*
+
+
+After looking at two variables in credit score and Prosper Score that are important to lenders, it's time to get a deeper understanding of the most important metric on a loan for the consumer: annual percentage rate (APR).
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = loan$BorrowerAPR)) +
+  geom_histogram(binwidth = .005) +
+  xlab('Borrower APR') +
+  ylab('Count')
+```
+
+
+The plot above is a modified histogram of the same borrower APR data that was previously plotted last section.  The mean APR of all loans hover around 0.2.  The histogram shape is fairly normal as expected.  However, this time the bindwidths were scrutinzed, and a large spike between 0.3 and 0.4 is discovered.
+
+To see if it has any relation to the status of the loans, the same APRs were plotted but separated by loan status.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = loan$BorrowerAPR)) +
+  geom_histogram(binwidth = .01) +
+  facet_wrap(~ loan$LoanStatus, 
+             scales = 'free') +
+  xlab('Borrower APR') +
+  ylab('Count')
+```
+
+
+The spike is pretty consistent throughout the status type, so the next step is to actually determine where this occurs and what it represents. 
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan, 
+       aes(x = loan$BorrowerAPR)) +
+  geom_histogram(binwidth = .0005) +
+  coord_cartesian(xlim = c(0.355,0.36)) +
+  xlab('Borrower APR') +
+  ylab('Count')
+```
+
+
+By manipulating the x-axis to spotlight the area, it's found the count of over 3,000 loans occurs between APRs of 0.357 and 0.358.
+
+
+```{r echo = FALSE}
+loan.aproutlier <- subset(loan, 
+                          BorrowerAPR > 0.357950 & 
+                          BorrowerAPR < 0.358)
+
+nrow(loan.aproutlier)
+summary(loan.aproutlier$BorrowerAPR)
+```
+
+
+After subsetting to include only these, the outlier section produced 3,672 loans of the same borrower APR (0.35797).
+
+Furthur investigation below shows they are all small loans with the lowest Prosper Rating issued in 2012.  For the purpose of getting measurements on the loan ratings, their numeric rating is used fairly extensively in the study.  For reference, the loans rated 7 down to 1 (7 being best, 1 being worst) correspond to the letter ratings AA, A, B, C, D, E, and HR.  
+
+
+```{r echo = FALSE}
+summary(loan.aproutlier$LoanOriginalAmount)
+summary(loan.aproutlier$ProsperRating..numeric.)
+table(loan.aproutlier$LoanOriginationYearQ)
+```
+
+
+Upon furthur review of Prosper's business history, beginning in 2010 Prosper changed it's business model to the use of pre-set rates for loans based on their own formula for the borrower's risk.  Previously, from 2006-2009 the company used a variable rate model employing an Ebay-esque system where borrowers and lenders determined rates through Dutch auction style bidding.  Therefore, the huge number of the same, very specific APR makes a little more sense occurring at this time with pre-set rates.
+
+Looking further into 2012's data, it's also surprising the number of lowest rated loans in proportion to the rest issued that year.  Below are two graphs: the first are loans issued in 2012 and the second is loans issued in all other years between 2009 and 2014.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#create subset only including 2012 loan issues
+loan.2012 <- subset(loan, 
+                    LoanOriginationYearQ == '2012 Q1' | 
+                    LoanOriginationYearQ == '2012 Q2' | 
+                    LoanOriginationYearQ == '2012 Q3' | 
+                    LoanOriginationYearQ == '2012 Q4')
+
+#subset data so includes all years but 2012
+loan.minus2012 <- subset(loan, 
+                         LoanOriginationYearQ != '2012 Q1' &
+                         LoanOriginationYearQ != '2012 Q2' &
+                         LoanOriginationYearQ != '2012 Q3' &
+                         LoanOriginationYearQ != '2012 Q4')
+
+#group by rating assigned to loan
+loan.2012prating <- loan.2012 %>% 
+  group_by(ProsperRating..numeric.) %>% 
+  summarise(MeanReturn = mean(EstimatedReturn), 
+            MedianReturn = median(EstimatedReturn), 
+            n = n()) %>%
+  arrange(ProsperRating..numeric.)
+
+#group by rating assigned to loan
+loan.prating <- loan.minus2012 %>% 
+  group_by(ProsperRating..numeric.) %>% 
+  summarise(MeanReturn = mean(EstimatedReturn), 
+            MedianReturn = median(EstimatedReturn), 
+            n = n()) %>%
+  arrange(ProsperRating..numeric.)
+
+ggplot(data = loan.2012prating, 
+       aes(x = ProsperRating..numeric., 
+           y = n)) + 
+  geom_histogram(stat = 'identity') +
+  xlab('Prosper Rating') +
+  ylab('Count') +
+  ggtitle('Prosper Loans Issued in 2012') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = seq(1,7,1)) 
+```
+
+
+You have to be surprised by the number of 1 Rated. We next look at the rest of the data to compare.  
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.prating, 
+       aes(x = ProsperRating..numeric., 
+           y = n)) +
+  geom_histogram(stat = 'identity') +
+  xlab('Prosper Rating') +
+  ylab('Count') +
+  ggtitle('Prosper Loans Issued in 2009, 2010, 2011, 2013, and 2014') +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  scale_x_continuous(breaks = seq(1,11,1))
+```
+
+
+Comparing these, Prosper approved more lowest rated loans in 2012 than all other years combined.
+Since they had very few loans issued in 2009 from the reboot and the company would not release full 2014 data to the public, the following chart looks at the years inbetween.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#subset for years 2010-2013
+loan.ysgrowth <- subset(loan.yearstudy, 
+                        LoanOriginationYear == '2010' | 
+                        LoanOriginationYear == '2011' | 
+                        LoanOriginationYear == '2012' |
+                        LoanOriginationYear == '2013')
+
+ggplot(data = subset(loan.ysgrowth, 
+                     !is.na(LoanOriginationYear) & 
+                    !is.na(ProsperRating..numeric. )), 
+       aes(x = LoanOriginationYear, 
+           fill = ProsperRating..numeric.)) +
+  geom_bar(position = ('dodge')) +
+  ggtitle('Number of Prosper Loans Issued Per Year') +
+  xlab('Year of Loan Issue') +
+  ylab('Number of Loans Issued') +
+  scale_fill_discrete(name = 'Prosper Rating',
+                      labels = c("1" = "HR", 
+                                 "2" = "E", 
+                                 "3" = "D", 
+                                 "4" = "C", 
+                                 "5" = "B", 
+                                 "6" = "A", 
+                                 "7" = "AA")) +
+  theme(plot.title = element_text(hjust = 0.5))  
+```
+
+
+Here we notice the number of loans growing and the distribution of loans for each Prosper rating change through the years. A in-depth look at this graph follows in the Final Plots section.  However, before we move on from the topic, it's worth showing that the size of the loan largely does not matter when it comes to actually paying back the loan or defaulting.  The delinquent bar does show some variation from the other three, but it's the most fluid since it holds the recent active loans, not accounts closed like the other 3.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#cut loan amount variables into buckets by size
+loan$loanamountbucket <- cut(loan$LoanOriginalAmount, 
+                             c(1000, 4000, 6500, 12000, 35000))
+
+loan.yearstudy$loanamountbucket <- cut(loan.yearstudy$LoanOriginalAmount, 
+                                       c(1000, 4000, 6500, 12000, 35000))
+
+ggplot(data = subset(loan.yearstudy, 
+                     !is.na(loanamountbucket) & 
+                       LoanStatus != 'Cancelled' &
+                       LoanStatus != 'Current' &
+                       LoanStatus != 'FinalPaymentInProgress'), 
+       aes(x = LoanStatus, 
+          fill = loanamountbucket)) +
+  geom_bar(position = 'fill') +
+  xlab('Loan Status') +
+  ylab('Proportion of Count')
+```
+
+
+
+
+####*Loan Year and Quarter*
+
+
+It's become obvious at this point that the date the loan was issued matters a great deal. An investor when deciding to fund a loan would ultimately want to know what they can expect back, so below is plotted the median estimated return over time. 
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#subset to remove loans without listed face amounts
+loan.cleanbuckets <- subset(loan,
+                            !is.na(loanamountbucket))
+
+#create vector of factor names to use when setting x-axis
+loan.cleanbuckets$LoanOriginationYearQ <- 
+  as.factor(loan.cleanbuckets$LoanOriginationYearQ)
+
+lvls <- levels(loan.cleanbuckets$LoanOriginationYearQ)
+
+ggplot(data = loan.cleanbuckets, 
+       aes(x = LoanOriginationYearQ, 
+           y = EstimatedReturn, 
+           color = loanamountbucket)) +
+  geom_line(stat = 'summary', 
+            fun.y = median, 
+            aes(group = loan.cleanbuckets$loanamountbucket), 
+            size = 2) +
+  scale_x_discrete(breaks=lvls[seq(3,length(lvls),4)]) +
+  coord_cartesian(xlim = c(14,33)) +
+  xlab('Loan Year and Quarter of Issue') +
+  ylab('Estimated Return')
+```
+
+
+In 2009 and 2014, estimated returns were similar, but significant variation shows in between as the company recovers in a volatile economic climate and adapts to a new pricing strategy. Overall, one could expect higher returns on smaller loans, confirmed by the negative correlation in Pearson's R. 
+
+
+```{r echo = FALSE}
+cor.test(loan$EstimatedReturn, loan$LoanOriginalAmount)
+```
+
+
+Since estimated return and borrower APR are related, one would expect APR over the years to also have a similar shape.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#group by quarter to get mean, median, and aggregate info
+loan.aprbyyearq <- loan %>% 
+  group_by(LoanOriginationYearQ) %>% 
+  summarise(meanApr = mean(BorrowerAPR), 
+            medianAPR = median(BorrowerAPR), 
+            n = n()) %>% 
+  arrange(LoanOriginationYearQ)
+
+ggplot(data = loan.aprbyyearq,
+       aes(x = LoanOriginationYearQ, 
+           y = meanApr, 
+           group = 1, 
+           color = n)) +
+  geom_path(size = 3) +
+  scale_colour_gradient(low = 'blue', 
+                        high = 'red', 
+                        limits = c(10,15000))+
+  scale_x_discrete(breaks=lvls[seq(2,length(lvls),by=4)], 
+                   name = "Loan Issue Year and Quarter",
+                   labels=c("2006 Q1" = "2006", 
+                            "2007 Q1" = "2007",
+                            "2008 Q1" = "2008", 
+                            "2009 Q2" = "2009",
+                            "2010 Q2" = "2010", 
+                            "2011 Q2" = "2011", 
+                            "2012 Q2" = "2012", 
+                            "2013 Q2" = "2013")) +
+  theme(panel.background = element_rect(fill = 'black', 
+                                        colour = 'black'), 
+        plot.title = element_text(hjust = 0.5)) +
+  labs(color = 'Loans Issued') +
+  ylab('Average Borrower APR of Loans') +
+  labs(title = 'APR of Prosper Loans from 2006 to 2013') +
+  coord_cartesian(xlim = c(2, 33))
+```
+
+
+The shape does resemble the plots above, but there's a lot more to be gleaned here.  There's a detailed explanation of the graph to follow in the Final Plots section. 
+
+So far we see number of loans issued increase and average APR decrease by 2014 at Prosper, but what about the size of the loans issued? 
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#group by quarter to get mean, median, and aggregate info
+loan.sizebyyearq <- loan %>%
+  group_by(LoanOriginationYearQ) %>% 
+  summarise(meansize = mean(LoanOriginalAmount), 
+            medianAPR = median(LoanOriginalAmount), 
+            n = n()) %>% 
+  arrange(LoanOriginationYearQ)
+
+#change data type to factor
+loan.sizebyyearq$LoanOriginationYearQ <- 
+  as.factor(loan.sizebyyearq$LoanOriginationYearQ)
+
+library(ggplot2)
+
+ggplot(data = loan.sizebyyearq, 
+       aes(x = LoanOriginationYearQ, 
+           y = meansize,
+           group = 1)) +
+  geom_path(size = 3) +
+  scale_x_discrete(breaks=lvls[seq(2,length(lvls),by=4)]) +
+  xlab('Loan Year and Quarter of Issue') +
+  ylab('Mean Loan Size') 
+```
+
+
+A pretty staggering increase in loan size appears for a company originally built on peer to peer lending.
+
+So now decreasing APR, more loans, and more big money flowing into Prosper loans. Why? Let's look at the number of investors that fund each loan. 
+
+
+```{r echo = FALSE}
+summary(loan$Investors)
+```
+
+
+This is quite a large spread for the number of investors in a single loan, but one would expect investors per loan to be increasing over time to be able to fund all these larger loans.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan,
+       aes(x = LoanOriginationYearQ, 
+           y = Investors, 
+           group = 1)) +
+  geom_line(stat = 'summary', 
+            fun.y = mean,
+            size = 2) +
+  scale_x_discrete(breaks=lvls[seq(17,length(lvls),by=4)]) +
+  coord_cartesian(xlim = c(17,33)) +
+  xlab('Loan Year and Quarter of Issue') +
+  ylab('Investors')
+```
+
+
+Instead, the average investors is decreasing. How is this so? According to a 2014 article by Nav Athwal in Forbes Magazine, big banks and institutions, the very structures peer to peer lending was created to cut out of the process, began to flood the market.  With capital far greater than a typical individual investor, these outfits raced in and "the peer lender is now the faceless institution with little motivation other than monetary return on investment". 
+
+
+
+
+####*Loan Crisis*
+
+
+With a good understanding of the new methodology of Prosper in tow, we finish with a glimpse back at data from during the United States economic recession and loan crisis of the 2000s.
+
+To do this, we'll be looking at defaults.  The first plot here shows default rates at Prosper throughout the entirety of the data set.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#group by year and quarter and computer completion ratio & number of loans 
+loan.ratiobyyearq <- loan %>% 
+  group_by(LoanOriginationYearQ) %>% 
+  summarise(ratio = sum(LoanStatus == 'Completed') / 
+              sum(sum(LoanStatus == 'Defaulted'), 
+                  sum(LoanStatus == 'ChargedOff'),
+                  sum(LoanStatus == 'Completed')), 
+            n = sum(sum(LoanStatus == 'Defaulted'), 
+                    sum(LoanStatus == 'ChargedOff'), 
+                    sum(LoanStatus == 'Completed'))) %>% 
+  arrange(LoanOriginationYearQ)
+
+#make year a factor
+loan.ratiobyyearq$LoanOriginationYearQ <- 
+  as.factor(loan.ratiobyyearq$LoanOriginationYearQ)
+
+lvls <- levels(loan.ratiobyyearq$LoanOriginationYearQ)
+
+ggplot(data = loan.ratiobyyearq, 
+       aes(x = LoanOriginationYearQ, 
+           y = ratio, 
+           group = 1)) +
+  geom_point() +
+  geom_path() +
+  scale_x_discrete(breaks=lvls[seq(2,length(lvls),by=4)]) +
+  xlab('Loan Year and Quarter of Issue') +
+  ylab('Proportion of Loans Paid Off')
+```
+
+
+Here completion rate of loans are shown, but this is misleading for a few reasons. We ultimately want default rates, and also Prosper was not in business in quarter 1 of 2009.  We only know the true ratio of finished loans for those up to 2009, because the totality of loans in years after may not be at their finish date (i.e. a 5 year loan issued in 2010 is not finished to know its outcome by the end of the data set in 2014 quarter 1).
+
+Therefore, it was determined best to plot loans issued just prior to Prosper closing its doors in 2008.  Also, to get a full grasp on the struggle borrowers had in repaying their loans, each account that was defaulted, chargedoff, or currently delinquent was included as being in some degree of loan delinquency.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+loan.deldefbyyearq <- loan %>% 
+  group_by(LoanOriginationYearQ) %>% 
+  summarise(ratio = sum(LoanStatus == 'Completed') / 
+              sum(sum(LoanStatus == 'Defaulted'), 
+                  sum(LoanStatus == 'ChargedOff'),
+                  sum(LoanStatus == 'Completed'),
+                  sum(LoanStatus == 'Delinquent')), 
+            n = sum(sum(LoanStatus == 'Defaulted'), 
+                    sum(LoanStatus == 'ChargedOff'), 
+                    sum(LoanStatus == 'Completed'),
+                    sum(LoanStatus == 'Delinquent'))) %>% 
+  arrange(LoanOriginationYearQ)
+
+loan.deldefbyyearq$LoanOriginationYearQ <- 
+  as.character(loan.deldefbyyearq$LoanOriginationYearQ)
+
+#add empty row for 2009 Q1
+loan.deldefbyyearq <- rbind(loan.deldefbyyearq, 
+                            "14th" = c('2009 Q1', 1,0))
+
+loan.deldefbyyearq$LoanOriginationYearQ <- 
+  as.factor(loan.deldefbyyearq$LoanOriginationYearQ)
+
+#rearrange factors to include empty 2009 Q1
+loan.deldefbyyearq <- loan.deldefbyyearq %>% 
+  arrange(LoanOriginationYearQ)
+
+#redefine levels to include 2009 Q1
+lvlsratio <- levels(loan.deldefbyyearq$LoanOriginationYearQ)
+
+#return to numeric after adding row
+loan.deldefbyyearq$ratio <- as.numeric(loan.deldefbyyearq$ratio)
+loan.deldefbyyearq$n <- as.numeric(loan.deldefbyyearq$n)
+
+ggplot(data = loan.deldefbyyearq, 
+       aes(x = LoanOriginationYearQ, 
+           #subtract 1 from ratio to compute default from completion
+           y = (1- ratio), 
+           fill = n)) +
+  geom_bar(stat = 'identity') +
+  scale_x_discrete(breaks=lvlsratio[seq(2,14, by=4)]) +
+  #limit plot to quarters we have all final loan info from
+  coord_cartesian(xlim = c(2,14), 
+                  ylim = c(0,0.3)) +
+  ggtitle("Fate of Prosper Loans from 2006 to 2009") +
+  ylab("Default and Delinquency Rate") +
+  theme(plot.title = element_text(hjust = 0.5)) +
+  xlab("Loan Issue Year and Quarter") +
+  scale_fill_gradient(low = 'yellow', 
+                      high = 'red', 
+                      limits = c(0,3300))+
+  labs(fill = 'Loans Issued') 
+```
+
+
+The company opened in 2006, so it's no surprise that volume increased each quarter but slowed to a halt before and after they shut down.  A larger proportion of defaults on loans issued in 2006 fits with the idea that Americans had trouble paying these off when the economic downturn occurred starting 2007.  2008 saw the most loans issued on this graphic, but a lower default rate than previously just means that people who could actually afford to repay the loan, unlike the irresponsible loan recipients that caused the subprime loan disaster, were the ones taking them out.  
+
+How did each state fair in these tough environments? The following graph is a detailed look at default and delinquency rates of borrowers for all states until 2009.
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+#subset only completed loans
+loan.preshutdown <- subset(loan.yearstudy, 
+                           LoanOriginationYear < 2009)
+loan.preshutdown$LoanOriginationYear <- 
+  as.factor(loan.preshutdown$LoanOriginationYear)
+
+#create set of default ratios by state
+state.dr <- loan.preshutdown %>% 
+  group_by(BorrowerState) %>% 
+  summarise(ratio = 1 - (sum(LoanStatus == 'Completed') / 
+                           sum(sum(LoanStatus == 'Defaulted'), 
+                               sum(LoanStatus == 'ChargedOff'), 
+                               sum(LoanStatus == 'Completed'),
+                               sum(LoanStatus == 'Delinquent'))), 
+            n = sum(sum(LoanStatus == 'Defaulted'), 
+                    sum(LoanStatus == 'ChargedOff'), 
+                    sum(LoanStatus == 'Completed'),
+                    sum(LoanStatus == 'Delinquent'))) %>% 
+  arrange(BorrowerState)
+
+state.dr$BorrowerState <- as.character(state.dr$BorrowerState)
+
+#remove no state name aggregate
+state.dr <- state.dr[-1,]
+state.dr$BorrowerStateFull <- 
+  state.name[match(state.dr$BorrowerState,state.abb)]
+
+#remove DC aggregate
+state.dr <- state.dr[-8,]
+state.dr$BorrowerStateFull <- 
+  tolower(state.dr$BorrowerStateFull)
+
+#compile state info from maps
+all_states <- map_data("state")
+colnames(all_states)[5] <- "BorrowerStateFull"
+
+#merge two datasets
+state.merged <- merge(all_states, 
+                      state.dr, 
+                      by="BorrowerStateFull")
+#order data by states
+state.merged <- state.merged[order(state.merged$order),]
+
+ggplot(data = state.merged, 
+       aes(x=long,
+           y=lat,
+           group=group))+
+  geom_polygon(aes(fill=state.merged$ratio))+
+  geom_path()+ 
+  scale_fill_gradient2(low = 'blue', 
+                       mid = 'white', 
+                       high = 'red', 
+                       midpoint = 0.175, 
+                       limits = c(0, 0.35), 
+                       breaks = seq(0,0.35,0.05))+
+  coord_map() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title = 'Prosper Loans Default or Delinquent 2006 to 2008')+
+  labs(fill = 'Rate')+
+  ylab('Latitude') +
+  xlab('Longitude')
+```
+
+
+A red tinge is more consistently present for states out west, and Texas and Alabama especially had trouble repaying their loans during this time period compared to the rest of the country.  
+
+
+
+
+###Final Plots
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = loan.aprbyyearq,
+       aes(x = LoanOriginationYearQ, 
+           y = meanApr, 
+           group = 1, 
+           color = n)) +
+  geom_path(size = 3) +
+  scale_colour_gradient(low = 'blue', 
+                        high = 'red', 
+                        limits = c(10,15000))+
+  scale_x_discrete(breaks=lvls[seq(2,length(lvls),by=4)], 
+                   name = "Loan Issue Year and Quarter",
+                   labels=c("2006 Q1" = "2006", 
+                            "2007 Q1" = "2007",
+                            "2008 Q1" = "2008", 
+                            "2009 Q2" = "2009",
+                            "2010 Q2" = "2010", 
+                            "2011 Q2" = "2011", 
+                            "2012 Q2" = "2012", 
+                            "2013 Q2" = "2013")) +
+  theme(panel.background = element_rect(fill = 'black', 
+                                        colour = 'black'), 
+        plot.title = element_text(hjust = 0.5)) +
+  labs(color = 'Loans Issued') +
+  ylab('Average Borrower APR of Loans') +
+  labs(title = 'APR of Prosper Loans from 2006 to 2013') +
+  coord_cartesian(xlim = c(2, 33))
+```
+
+It's no surprise that lower rates appear prior to 2008, as it was a time when loans were issued at lower rates to people who ended up not being able to afford them.  This ultimately culminated at the largest economic scale to the mortgage loan crisis beginning in 2007.  
+
+Once Prosper reopened its doors with SEC regulations, it appears they averaged a higher APR for borrowers.  This coincides with the increase in volume of lower rated loans previously plotted.  When the company switched the pricing system December 19,2010, it only took a few quarters for the company's rates to drop significantly.  Again, this goes hand in hand with the influx of instutional businesses in the peer to peer industry with both size and volume of loans increasing.
+
+
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = subset(loan.ysgrowth, 
+                     !is.na(LoanOriginationYear) & 
+                    !is.na(ProsperRating..numeric. )), 
+       aes(x = LoanOriginationYear, 
+           fill = ProsperRating..numeric.)) +
+  geom_bar(position = ('dodge')) +
+  ggtitle('Number of Prosper Loans Issued Per Year') +
+  xlab('Year of Loan Issue') +
+  ylab('Number of Loans Issued') +
+  scale_fill_discrete(name = 'Prosper Rating',
+                      labels = c("1" = "HR", 
+                                 "2" = "E", 
+                                 "3" = "D", 
+                                 "4" = "C", 
+                                 "5" = "B", 
+                                 "6" = "A", 
+                                 "7" = "AA")) +
+  theme(plot.title = element_text(hjust = 0.5)) 
+```
+
+
+In my opinion, the loans issued per year colored by Prosper Rating is the most important and interesting plot from the study.  It portrays the company's business strategy and the direction the industry has gone following the SEC's insistence that peer to peer lenders must be registered.  The first and most obvious trend is the pure volume of loans increasing at the company.  It speaks to the power of the company to overcome its hardships and also to the relative strength of the p2p industry.  
+
+The type of loans Prosper issued is the other glaring trend.  In a new environment with stricter qualifications to borrow and a new pricing structure, the propotion of higher rated loans issued increased as Prosper gained traction again.  As previously mentioned, theres not doubt that the institutional influence was strong in creating this. 
+
+
+
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+ggplot(data = state.merged, 
+       aes(x=long,
+           y=lat,
+           group=group))+
+  geom_polygon(aes(fill=state.merged$ratio))+
+  geom_path()+ 
+  scale_fill_gradient2(low = 'blue', 
+                       mid = 'white', 
+                       high = 'red', 
+                       midpoint = 0.175, 
+                       limits = c(0, 0.35), 
+                       breaks = seq(0,0.35,0.05))+
+  coord_map() +
+  theme(plot.title = element_text(hjust = 0.5))+
+  labs(title = 'Prosper Loans Default or Delinquent 2006 to 2008')+
+  labs(fill = 'Rate')+
+  ylab('Latitude') +
+  xlab('Longitude')
+```
+
+
+The western United states seemed to struggle more, for between 20-30% of the loans from a majority of these states were in some level of delinquency.  Texas was the only state to break the 30% threshold.  The northeast faired relatively well other than New Hampshire and Rhode Island, and it should be mentioned that no loans we issued in South Dakota.  In all, the plot shows that most all of the nation experienced some hardships during the economic downturn that spanned 2007-2010 with many Americans struggling to repay their loan.
+
+The following table shows the six most affected states with specific ratios.  Three highest ratios are from small states with few loans during the time period, which speaks to the relative newness of the company in these years.
+
+
+```{r echo = FALSE, message = FALSE}
+head(state.dr[order(state.dr$ratio, decreasing = TRUE), ])
+```
+
+
+
+###Reflections
+
+
+The Prosper data set that the company made public from 2006 to 2014 initially looks overwhelming with 113,937 individual loans and 82 variables to describe them.  The first step was to try to understand what each variable contributed and why might Prosper require these in an application.  There weren't any huge questions that initially arose, so for the most part I decided I wanted to choose variables the general public can relate with and let these speak for themselves concerning their relation to the actual loan.  These were variables that are prominent on television, in newspapers, and in financial circles that I felt would be beneficial for anyone reading the study to understand further both in general and specifically to the Prosper Marketplace.
+
+Many of the successes and leads from the data set came from looking at the graphs in univariate or bivariate plots.  Once a trend or interesting point was found in simple plots of the mainstream variables, it was simpler to explore how that might fit in with more vague or less consequential metrics.  It was also beneficial to have some previous background information on the economics of the time period.  Once I decided to group the data by year and quarter, trends became much more apparent.
+
+With a data set this large and some confusing variables, problems unfortunately arose throughout.  For one, the data set stopped in 2014, so many comparisons I wanted to make for default rates would have been inaccurate.  The economic environment of Prosper as a company changed dramatically during the time frame provided.  It shut its doors halfway through only to reopen under different regulations and even implemented a different business strategy.  With a timeline like this, until a full understanding of the company was grasped it was very hard to discern what the trends were and why they were present.  Drawing conclusions from the data as a whole proved misleading at times without taking into account whether the variable was directly impacted by regulations or business strategy.
+
+There are many future follow-ups that would help explain some trends noticed and also to compare Prosper Marketplace to other lenders.  Bank loan data, especially from 2006 to 2008, would be great to compare how institutions fared compared to Prosper.  Similar to this, data from Lending Club, the other prominant peer to peer lending company in America, could provide some interesting conclusions to how successful the company is and how their business strategies might differ.  A complete data set that stretches to present day for Prosper would help detail how the changes implemented after filing with the SEC have changed the structure of the company.  Finally, a list of investors could help show what type of lenders use Propser and might firm up the theory of large instiutions flocking to this lending platform.
+
