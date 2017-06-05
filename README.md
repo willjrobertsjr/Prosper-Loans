@@ -4,8 +4,10 @@ The data set for this study comes from publicly available Prosper-published data
 
 A few features are covered in detail including APR, loan delinquency, and loan issue volume.
 
-**allplots.Rmd**: R markdown file containing the project code.
-**allplots.html**: allplot.Rmd converted to HTML file.
-**Prosper Resource List**: Resources referenced in the project.
+- **allplots.Rmd**: R markdown file containing the project code.
+
+- **allplots.html**: allplot.Rmd converted to HTML file.
+
+- **Prosper Resource List**: Resources referenced in the project.
 
 Submitted April 2017 as part of Udacity's Data Analysis nanodegree program.
